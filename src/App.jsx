@@ -12,21 +12,23 @@ import EndGameJoinPrompt from './shared/EndGameJoinPrompt';
 // Games
 import TitlesGame from './titles/TitlesGame';
 
+// Screens
+import NewsScreen from './screens/NewsScreen';
+import PricingScreen from './screens/PricingScreen';
+
 /* ══════════════════════════════════════════════════
-   APP ROOT - UPDATED
-   - Routes to games
-   - Manages global state
-   - Entry point
+   APP ROOT - FINAL VERSION
+   - Complete app with all screens
+   - Routes to games and information pages
 ══════════════════════════════════════════════════ */
 
 export default function App() {
   // Navigation & View State
   const [tab, setTab] = useState('game');
-  const [selectedGame, setSelectedGame] = useState(null); // 'titles' | 'qumairi'
-  const [gameScreen, setGameScreen] = useState('home');
+  const [selectedGame, setSelectedGame] = useState(null);
 
   // Session & Auth
-  const [role, setRole] = useState(null); // 'admin' | 'player'
+  const [role, setRole] = useState(null);
   const [myId, setMyId] = useState(null);
   const [myName, setMyName] = useState('');
   const [myNick, setMyNick] = useState('');
@@ -40,7 +42,7 @@ export default function App() {
   const { notifs, notify } = useNotifications();
   const isAdmin = role === 'admin';
 
-  // Check for active subscription on load
+  // Check for active subscription
   useEffect(() => {
     const stored = getStorageItem('activeCode');
     if (stored && isCodeValid(stored)) {
@@ -91,8 +93,6 @@ export default function App() {
       }
       
       .main {
-        position: relative;
-        z-index: 5;
         flex: 1;
         padding: 14px;
         max-width: 580px;
@@ -109,7 +109,7 @@ export default function App() {
         padding: 12px 16px;
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: center;
         border-bottom: 1px solid var(--border);
       }
       
@@ -146,12 +146,12 @@ export default function App() {
         justify-content: center;
         gap: 3px;
         cursor: pointer;
-        transition: all .18s;
         border: none;
         background: transparent;
         padding: 6px 2px;
         color: var(--muted);
         font-family: 'Tajawal', sans-serif;
+        transition: all .18s;
       }
       
       .bnav-item.active {
@@ -172,7 +172,6 @@ export default function App() {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 6px;
         width: 100%;
         padding: 12px;
         border: none;
@@ -193,56 +192,13 @@ export default function App() {
         color: #07070f;
       }
       
-      .bg:hover:not(:disabled) {
+      .bg:hover {
         filter: brightness(1.08);
-        box-shadow: 0 4px 18px rgba(240,192,64,.25);
-      }
-      
-      .br {
-        background: linear-gradient(135deg, var(--red), #a82020);
-        color: #fff;
       }
       
       .bv {
         background: linear-gradient(135deg, var(--green), #1a8a50);
         color: #fff;
-      }
-      
-      .bgh {
-        background: transparent;
-        color: var(--muted);
-        border: 1px solid rgba(255,255,255,.08);
-      }
-      
-      .bgh:hover {
-        background: rgba(255,255,255,.04);
-        color: var(--text);
-      }
-      
-      .card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 14px;
-        margin-bottom: 11px;
-      }
-      
-      .inp {
-        width: 100%;
-        padding: 10px 13px;
-        background: #080820;
-        border: 1px solid rgba(240,192,64,.2);
-        border-radius: 8px;
-        color: var(--text);
-        font-family: 'Tajawal', sans-serif;
-        font-size: 14px;
-        outline: none;
-        direction: rtl;
-      }
-      
-      .inp:focus {
-        border-color: var(--gold);
-        box-shadow: 0 0 0 3px rgba(240,192,64,.08);
       }
       
       .notif {
@@ -257,9 +213,6 @@ export default function App() {
         font-size: 13px;
         text-align: center;
         animation: slideDown .3s ease, fadeOut .3s ease 2.7s forwards;
-        min-width: 210px;
-        max-width: 88vw;
-        box-shadow: 0 8px 28px rgba(0,0,0,.6);
       }
       
       @keyframes slideDown {
@@ -293,7 +246,6 @@ export default function App() {
     document.head.appendChild(style);
   }, []);
 
-  // Navigation items
   const navItems = [
     { id: 'game', icon: '🎮', label: 'لعبة' },
     { id: 'codes', icon: '🎫', label: 'أكواد', admin: true },
@@ -312,9 +264,7 @@ export default function App() {
 
       {/* Header */}
       <div className="hdr">
-        <div style={{ width: 60 }} />
         <div className="logo">🏟️ ساحة الألعاب</div>
-        <div style={{ width: 60 }} />
       </div>
 
       {/* Main Content */}
@@ -349,16 +299,21 @@ export default function App() {
           />
         )}
 
-        {/* Game Selection Screen */}
+        {/* Game Selection */}
         {tab === 'game' && !selectedGame && (
           <div style={{ textAlign: 'center', padding: '20px' }}>
-            <h1 style={{ fontSize: '28px', marginBottom: '20px', background: 'linear-gradient(135deg, var(--gold), #ff8c00)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <h1 style={{
+              fontSize: '28px',
+              marginBottom: '20px',
+              background: 'linear-gradient(135deg, var(--gold), #ff8c00)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}>
               🎮 ساحة الألعاب
             </h1>
             <p style={{ color: 'var(--muted)', marginBottom: '30px', fontSize: '14px' }}>
               اختر اللعبة التي تريد اللعب بها
             </p>
-
             <button
               className="btn bg"
               onClick={() => setSelectedGame('titles')}
@@ -366,7 +321,6 @@ export default function App() {
             >
               🎭 لعبة الألقاب
             </button>
-
             <button
               className="btn bv"
               onClick={() => setSelectedGame('qumairi')}
@@ -393,31 +347,19 @@ export default function App() {
             <div style={{ fontSize: '48px', marginBottom: '20px' }}>🦅</div>
             <h2 style={{ fontSize: '24px', marginBottom: '10px' }}>صيد القميري</h2>
             <p style={{ color: 'var(--muted)', marginBottom: '20px' }}>قريباً جداً!</p>
-            <button
-              className="btn bgh"
-              onClick={() => setSelectedGame(null)}
-              style={{ marginTop: '20px' }}
-            >
+            <button className="btn" style={{ background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'var(--muted)' }} onClick={() => setSelectedGame(null)}>
               ← رجوع
             </button>
           </div>
         )}
 
-        {/* Other Tabs - Placeholders */}
-        {tab === 'news' && (
-          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)' }}>
-            <h2>🔔 الأخبار</h2>
-            <p>قريباً</p>
-          </div>
-        )}
+        {/* News */}
+        {tab === 'news' && <NewsScreen />}
 
-        {tab === 'pricing' && (
-          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)' }}>
-            <h2>💎 الباقات</h2>
-            <p>قريباً</p>
-          </div>
-        )}
+        {/* Pricing */}
+        {tab === 'pricing' && <PricingScreen />}
 
+        {/* Codes - Admin Only */}
         {tab === 'codes' && !isAdmin && (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--muted)' }}>
             <h2>🎫 الأكواد</h2>
@@ -426,7 +368,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Bottom Navigation */}
+      {/* Navigation */}
       <nav className="bnav">
         {navItems
           .filter(item => !item.admin || isAdmin)
