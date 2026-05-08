@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, set, get, update, onValue, off, push } from "firebase/database";
+
+/* ⭐ نظام الأكواد والاشتراكات - v40 */
+import AdminCodesPanel from './AdminCodesPanel';
+import CodeActivation from './CodeActivation';
+import SubscriptionTimer, { getActiveCode, isCodeValid } from './SubscriptionTimer';
+import EndGameJoinPrompt from './EndGameJoinPrompt';
+
 /* ══════════════ FIREBASE ══════════════ */
 const firebaseConfig = {
   apiKey: "AIzaSyDwt9h7MaOo2Dh03qGm43FfWad1cOtgex4",
@@ -281,6 +288,14 @@ textarea.inp{resize:vertical;min-height:80px}
 
 /* ── SILENT ROUND ── */
 .silent-badge{background:rgba(79,163,224,.08);border:1px solid rgba(79,163,224,.3);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:8px;margin-bottom:11px;font-size:12px;color:var(--blue)}
+
+/* ⭐ CODES & SUBSCRIPTION - v40 ── */
+.sg{display:grid;gap:10px;margin-bottom:12px}
+.sg4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:390px){.sg4{grid-template-columns:repeat(2,1fr)}}
+.sbox{background:var(--card2);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:12px 8px;text-align:center}
+.snum{font-family:'Cairo',sans-serif;font-size:24px;font-weight:900;color:var(--text);margin-bottom:4px}
+.slbl{font-size:10px;color:var(--muted);font-weight:600}
 `;
 
 /* ══ HELPERS ══ */
@@ -448,6 +463,59 @@ export default function App() {
   const [qJoinLoading, setQJoinLoading] = useState(false);
   const [qCustomTimer, setQCustomTimer] = useState('');
   const [qCountdown, setQCountdown] = useState(null); // عداد القميري الحقيقي
+
+  /* ⭐ CODES & SUBSCRIPTION STATE - v40 ── */
+  const [activeCode, setActiveCode] = useState(null); // الكود المُفعّل
+  const [showCodeActivation, setShowCodeActivation] = useState(false);
+  const [showEndGamePrompt, setShowEndGamePrompt] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false); // هل المستخدم Admin؟
+  const [playerStatsEndGame, setPlayerStatsEndGame] = useState(null);
+
+  /* ⭐ CHECK ACTIVE CODE & ADMIN STATUS - v40 ── */
+  useEffect(() => {
+    const checkCode = async () => {
+      // التحقق من وضع Admin
+      const storedAdmin = localStorage.getItem('pfcc_is_admin');
+      if (storedAdmin === 'true') {
+        setIsAdmin(true);
+        return; // Admin لا يحتاج كود
+      }
+      
+      // التحقق من الكود المُفعّل
+      const code = await getActiveCode(db, myId);
+      if (code && isCodeValid(code)) {
+        setActiveCode(code);
+        setShowCodeActivation(false);
+      } else {
+        // لا يوجد كود صالح
+        setActiveCode(null);
+        // عرض شاشة التفعيل فقط إذا لم يكن في غرفة
+        if (!roomCode && !selectedGame) {
+          setShowCodeActivation(true);
+        }
+      }
+    };
+    
+    checkCode();
+  }, [db, myId, roomCode, selectedGame]);
+
+  // ⭐ مراقبة انتهاء الاشتراك - v40
+  useEffect(() => {
+    if (!activeCode) return;
+    
+    const checkExpiry = setInterval(() => {
+      if (!isCodeValid(activeCode)) {
+        setActiveCode(null);
+        if (!isAdmin) {
+          notify('⏰ انتهى اشتراكك! جدّد الآن', 'error');
+          setShowCodeActivation(true);
+        }
+      }
+    }, 60000); // تحقق كل دقيقة
+    
+    return () => clearInterval(checkExpiry);
+  }, [activeCode, isAdmin]);
+
   const [qTurnOverlay, setQTurnOverlay] = useState(null); // {groupName, weapon}
   const [qShieldTree, setQShieldTree] = useState(null); // رقم الشجرة المحمية (0-10)
   const [qPoisonTree, setQPoisonTree] = useState(null); // رقم الشجرة المسمومة
@@ -1245,6 +1313,26 @@ export default function App() {
     // Clear ALL sessions so no one auto-rejoins a finished game
     localStorage.removeItem('ng_session');
     localStorage.removeItem('ng_admin_session');
+    
+    /* ⭐ عرض شاشة الانضمام للمتسابقين غير المشتركين - v40 */
+    setTimeout(() => {
+      if (!isAdmin && !activeCode && role === 'player') {
+        // حساب إحصائيات اللاعب
+        const myAttacks = allAttacksFlat.filter(a => a.attackerNick === myNickLocal);
+        const hits = myAttacks.filter(a => a.correct).length;
+        const total = myAttacks.length;
+        const accuracy = total > 0 ? Math.round((hits / total) * 100) : 0;
+        
+        setPlayerStatsEndGame({
+          rank: '-',
+          hits: hits,
+          accuracy: accuracy,
+          time: '-'
+        });
+        
+        setShowEndGamePrompt(true);
+      }
+    }, 3000); // بعد 3 ثواني من انتهاء اللعبة
   };
   const elimCheat = async (pid) => {
     const p = playersList.find(pl=>pl.id===pid);
@@ -1312,6 +1400,21 @@ export default function App() {
   };
 
   const renderGame = () => {
+
+    /* ⭐ التحقق من الاشتراك - v40 ── */
+    if (!isAdmin && !activeCode && !roomCode && !selectedGame) {
+      return (
+        <CodeActivation
+          db={db}
+          currentUser={{ uid: myId }}
+          onActivationSuccess={(codeData) => {
+            setActiveCode(codeData);
+            setShowCodeActivation(false);
+            notify('✅ تم تفعيل الاشتراك بنجاح!', 'success');
+          }}
+        />
+      );
+    }
 
     /* ── ONBOARDING SCREEN ── */
     if(showOnboarding) {
@@ -2283,7 +2386,7 @@ export default function App() {
                   {i===0?'👑':i===1?'🥈':i===2?'🥉':i+1}
                 </div>
                 {/* المشرف يرى الأفاتار والاسم واللقب، المتسابق يرى اللقب فقط بدون أفاتار */}
-                {effectiveRole==='admin'{role==='admin'&&<Av{role==='admin'&&<Av<Av p={p} sz={32} fs={12}/>}
+                {effectiveRole==='admin'&&<Av p={p} sz={32} fs={12}/>}
                 <div style={{flex:1}}>
                   
                   {effectiveRole==='admin'
@@ -3012,7 +3115,13 @@ notify('⚔️ هجوم','gold');}}>⚔️ هاجم</button>)}</div>}
     </div>
   );
 
-  const navItems=[{id:'news',icon:'🔔',label:'أخبار',dot:hasNews},{id:'game',icon:'🎭',label:'اللعبة'},{id:'suggest',icon:'💡',label:'اقتراح'},{id:'pricing',icon:'💎',label:'الباقات'}];
+  const navItems=[
+    {id:'game',icon:'🏟️',label:'الألعاب'},
+    {id:'news',icon:'🔔',label:'أخبار',dot:hasNews},
+    ...(isAdmin ? [{id:'codes',icon:'🎫',label:'الأكواد'}] : []),
+    {id:'pricing',icon:'💎',label:'الباقات'},
+    {id:'suggest',icon:'💡',label:'اقتراح'}
+  ];
 
   /* ── Loading splash ── */
   if(isLoading) return(
@@ -3247,8 +3356,21 @@ notify('⚔️ هجوم','gold');}}>⚔️ هاجم</button>)}</div>}
 
         {/* Center logo */}
         <div className="logo" style={{position:'absolute',left:'50%',transform:'translateX(-50%)'}}>
-          {tab==='news'?'🔔 أخبار':tab==='game'?(selectedGame==='nicknames'?'🎭 لعبة الألقاب':selectedGame==='qumairi'?'🦅 صيد القميري':'🏟️ ساحة الألعاب'):tab==='suggest'?'💡 اقتراح':'💎 الباقات'}
+          {tab==='news'?'🔔 أخبار':tab==='codes'?'🎫 الأكواد':tab==='game'?(selectedGame==='nicknames'?'🎭 لعبة الألقاب':selectedGame==='qumairi'?'🦅 صيد القميري':'🏟️ ساحة الألعاب'):tab==='suggest'?'💡 اقتراح':'💎 الباقات'}
         </div>
+
+        {/* ⭐ مؤشر الاشتراك - v40 */}
+        {activeCode && !isAdmin && (
+          <div style={{position:'absolute',left:'16px'}}>
+            <SubscriptionTimer 
+              activeCode={activeCode}
+              onExpired={() => {
+                setActiveCode(null);
+                setShowCodeActivation(true);
+              }}
+            />
+          </div>
+        )}
 
         {/* Left side — admin control button */}
         <div style={{display:'flex',gap:6,alignItems:'center'}}>
@@ -3262,10 +3384,34 @@ notify('⚔️ هجوم','gold');}}>⚔️ هاجم</button>)}</div>}
 
       <div className="main">
         {tab==='news'&&renderNews()}
+        {/* ⭐ تبويب الأكواد - v40 */}
+        {tab==='codes'&&isAdmin&&(
+          <AdminCodesPanel 
+            db={db}
+            currentUser={{ uid: myId }}
+          />
+        )}
         {tab==='game'&&(()=>{try{return renderGame();}catch(e){console.error('Render error:',e);return <div style={{padding:20,textAlign:'center',color:'var(--red)'}}><div style={{fontSize:40}}>⚠️</div><div style={{marginTop:8}}>خطأ في العرض — حدّث الصفحة</div><div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>{e?.message}</div><button className="btn bg mt2" onClick={()=>window.location.reload()}>🔄 تحديث</button></div>;}})()}
         {tab==='suggest'&&renderSuggest()}
         {tab==='pricing'&&renderPricing()}
       </div>
+
+      {/* ⭐ شاشة الانضمام بنهاية اللعبة - v40 */}
+      {showEndGamePrompt && playerStatsEndGame && (
+        <EndGameJoinPrompt
+          playerStats={playerStatsEndGame}
+          winner={gameState?.winner}
+          onClose={() => setShowEndGamePrompt(false)}
+          onSubscribe={(pkg) => {
+            notify('قريباً: ربط بوابة الدفع', 'info');
+            setShowEndGamePrompt(false);
+          }}
+          onTryFree={() => {
+            setShowEndGamePrompt(false);
+            notify('🎁 التجربة المجانية مُفعّلة!', 'success');
+          }}
+        />
+      )}
 
       <nav className="bnav">
         {navItems.map(item=>(
