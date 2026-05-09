@@ -1,0 +1,10 @@
+/** games/fameeri/FameeriResults.jsx — مؤقت */
+export default function FameeriResults({ goTo, onExit }) {
+  return (
+    <div className="scr">
+      <div className="ptitle">🌳 FameeriResults</div>
+      <div className="psub">🚧 قيد التطوير</div>
+      <button className="btn bgh" onClick={() => goTo("home")}>← رجوع</button>
+    </div>
+  );
+}
