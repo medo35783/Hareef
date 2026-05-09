@@ -1,0 +1,109 @@
+/**
+ * games/titles/TitlesResults.jsx
+ * ───────────────────────────────
+ * شاشة النتائج النهائية — الترتيب + إحصائيات
+ */
+import { ref, remove } from "firebase/database";
+import { FB_PATHS, AV_COLORS } from "../../core/constants";
+import { LS_KEYS } from "../../core/constants";
+
+export default function TitlesResults({
+  db, roomCode, role, myId,
+  players, attacks, gameState,
+  notify, goTo, onExit,
+}) {
+  /* ══ حساب الترتيب ══ */
+  const scores = {};
+  Object.values(attacks).forEach((a) => {
+    if (!scores[a.attackerId]) scores[a.attackerId] = { hits: 0, misses: 0 };
+    if (a.correct) scores[a.attackerId].hits++;
+    else           scores[a.attackerId].misses++;
+  });
+
+  const ranked = Object.entries(players)
+    .filter(([, p]) => p.role !== "admin")
+    .map(([id, p]) => ({
+      id, ...p,
+      hits:     scores[id]?.hits   || 0,
+      misses:   scores[id]?.misses || 0,
+      accuracy: scores[id]
+        ? Math.round((scores[id].hits / (scores[id].hits + scores[id].misses)) * 100) || 0
+        : 0,
+    }))
+    .sort((a, b) => b.hits - a.hits || a.misses - b.misses);
+
+  const winner = ranked[0];
+
+  /* ══ إعادة اللعبة ══ */
+  const handleReset = async () => {
+    try {
+      await remove(ref(db, FB_PATHS.titlesRoom(roomCode)));
+      localStorage.removeItem(LS_KEYS.session);
+      onExit();
+    } catch {
+      notify("❌ خطأ", "error");
+    }
+  };
+
+  return (
+    <div className="scr">
+      <div className="ptitle">🏆 النتائج النهائية</div>
+
+      {/* بطاقة الفائز */}
+      {winner && (
+        <div className="wcard">
+          <div className="wcrown">🏆</div>
+          <div style={{ fontFamily: "'Cairo',sans-serif", fontSize: 22, fontWeight: 900, color: "var(--gold)" }}>
+            {winner.name}
+          </div>
+          <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 4 }}>
+            لقبه: <strong style={{ color: "var(--gold)" }}>{winner.nick}</strong>
+          </div>
+          <div style={{ fontSize: 13, marginTop: 8 }}>
+            🎯 {winner.hits} إصابة
+          </div>
+        </div>
+      )}
+
+      {/* الترتيب */}
+      <div className="card">
+        <div className="ctitle">📊 الترتيب الكامل</div>
+        {ranked.map((p, i) => (
+          <div key={p.id} className="pi" style={{
+            border: p.id === myId ? "1.5px solid var(--gold)" : undefined,
+          }}>
+            <div style={{
+              fontFamily: "'Cairo',sans-serif",
+              fontSize: 18, fontWeight: 900,
+              color: i === 0 ? "var(--gold)" : i === 1 ? "#c0c0c0" : i === 2 ? "#cd7f32" : "var(--muted)",
+              width: 28, textAlign: "center", flexShrink: 0,
+            }}>
+              {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
+            </div>
+            <div className="pi-av" style={{ background: AV_COLORS[p.colorIdx % AV_COLORS.length] }}>
+              {p.initials}
+            </div>
+            <div className="pi-info">
+              <div className="pi-name">{p.name} {p.id === myId && <span style={{ fontSize: 10, color: "var(--gold)" }}>(أنت)</span>}</div>
+              <div className="pi-sub">🏷️ {p.nick}</div>
+            </div>
+            <div style={{ textAlign: "left", fontSize: 12 }}>
+              <div style={{ fontWeight: 700, color: "var(--green)" }}>🎯 {p.hits}</div>
+              <div style={{ color: "var(--muted)", fontSize: 10 }}>دقة {p.accuracy}%</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* الأزرار */}
+      {role === "admin" && (
+        <button className="btn br" onClick={handleReset} style={{ marginBottom: 8 }}>
+          🗑️ حذف الغرفة والعودة
+        </button>
+      )}
+      <button className="btn bgh" onClick={() => { localStorage.removeItem(LS_KEYS.session); onExit(); }}>
+        🏠 الرئيسية
+      </button>
+    </div>
+  );
+}
