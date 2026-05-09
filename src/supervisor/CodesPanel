@@ -1,383 +1,226 @@
-import { useState, useEffect } from 'react';
-import { ref, push, set, get, onValue, update } from 'firebase/database';
+/**
+ * supervisor/CodesPanel.jsx
+ * ──────────────────────────
+ * لوحة تحكم الأكواد — خاصة بـ Domain Admin
+ * يعرض: إحصائيات + توليد أكواد + قائمة كل الأكواد
+ */
+import { useState, useEffect } from "react";
+import { ref, push, set, onValue } from "firebase/database";
 
-/* ══════════════════════════════════════════════════
-   ADMIN CODES MANAGEMENT COMPONENT
-   - توليد الأكواد
-   - عرض الإحصائيات
-   - إدارة الأكواد
-══════════════════════════════════════════════════ */
+const PACKAGES = [
+  { duration: 1, price: 15, label: "يوم",    hours: 24,  discount: 0  },
+  { duration: 3, price: 35, label: "3 أيام", hours: 72,  discount: 22 },
+  { duration: 7, price: 50, label: "أسبوع",  hours: 168, discount: 52 },
+];
 
-export default function AdminCodesPanel({ db, currentUser }) {
-  const [codes, setCodes] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  
-  // Form state
-  const [selectedDuration, setSelectedDuration] = useState(3);
-  const [codeCount, setCodeCount] = useState(1);
-  const [generatedCodes, setGeneratedCodes] = useState([]);
-  const [showSuccess, setShowSuccess] = useState(false);
+const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const genRandom = () => {
+  let c = "CODE-";
+  for (let i = 0; i < 6; i++) c += CHARS[Math.floor(Math.random() * CHARS.length)];
+  return c;
+};
 
-  // الباقات المتاحة
-  const packages = [
-    { duration: 1, price: 15, label: 'يوم واحد', hours: 24, discount: 0 },
-    { duration: 3, price: 35, label: '3 أيام', hours: 72, discount: 22 },
-    { duration: 7, price: 50, label: 'أسبوع', hours: 168, discount: 52 }
-  ];
+export default function CodesPanel({ db, notify }) {
+  const [codes,     setCodes    ] = useState({});
+  const [loading,   setLoading  ] = useState(true);
+  const [pkg,       setPkg      ] = useState(3);
+  const [count,     setCount    ] = useState(1);
+  const [generating,setGenerating] = useState(false);
+  const [recent,    setRecent   ] = useState([]);
 
-  // تحميل الأكواد من Firebase
+  /* ══ Firebase listener ══ */
   useEffect(() => {
-    const codesRef = ref(db, 'codes');
-    const unsubscribe = onValue(codesRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setCodes(snapshot.val());
-      } else {
-        setCodes({});
-      }
+    const r = ref(db, "codes");
+    const unsub = onValue(r, (snap) => {
+      setCodes(snap.exists() ? snap.val() : {});
       setLoading(false);
     });
-
-    return () => unsubscribe();
+    return () => unsub();
   }, [db]);
 
-  // توليد كود عشوائي
-  const generateRandomCode = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // بدون O,0,I,1 لتجنب الالتباس
-    let code = 'CODE-';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
+  /* ══ إحصائيات ══ */
+  const vals   = Object.values(codes);
+  const stats  = {
+    total:   vals.length,
+    unused:  vals.filter((c) => c.status === "unused").length,
+    active:  vals.filter((c) => c.status === "active").length,
+    expired: vals.filter((c) => c.status === "expired").length,
   };
 
-  // توليد أكواد جديدة
-  const handleGenerateCodes = async () => {
-    if (codeCount < 1 || codeCount > 100) {
-      alert('يرجى إدخال عدد بين 1 و 100');
-      return;
-    }
-
+  /* ══ توليد أكواد ══ */
+  const handleGenerate = async () => {
+    if (count < 1 || count > 100) { notify("بين 1 و 100 فقط", "error"); return; }
     setGenerating(true);
-    const newCodes = [];
-    const selectedPackage = packages.find(p => p.duration === selectedDuration);
-
+    const sel  = PACKAGES.find((p) => p.duration === pkg);
+    const list = [];
     try {
-      for (let i = 0; i < codeCount; i++) {
-        const code = generateRandomCode();
-        const codeRef = push(ref(db, 'codes'));
-        
-        const codeData = {
-          code: code,
-          duration: selectedDuration,
-          durationHours: selectedPackage.hours,
-          price: selectedPackage.price,
-          status: 'unused', // unused, active, expired
-          type: 'standard', // standard, promotional, trial
-          createdAt: Date.now(),
-          createdBy: currentUser?.uid || 'admin',
-          activatedAt: null,
-          expiresAt: null,
-          userId: null,
-          devices: {},
-          usageHistory: []
+      for (let i = 0; i < count; i++) {
+        const r2   = push(ref(db, "codes"));
+        const data = {
+          code: genRandom(), duration: pkg, durationHours: sel.hours,
+          price: sel.price, status: "unused",
+          createdAt: Date.now(), activatedAt: null, expiresAt: null,
         };
-
-        await set(codeRef, codeData);
-        newCodes.push({ id: codeRef.key, ...codeData });
+        await set(r2, data);
+        list.push(data);
       }
-
-      setGeneratedCodes(newCodes);
-      setShowSuccess(true);
-      
-      // إخفاء رسالة النجاح بعد 5 ثواني
-      setTimeout(() => setShowSuccess(false), 5000);
-      
-    } catch (error) {
-      console.error('خطأ في توليد الأكواد:', error);
-      alert('حدث خطأ أثناء توليد الأكواد');
+      setRecent(list);
+      notify(`✅ تم توليد ${count} كود`, "success");
+    } catch {
+      notify("❌ خطأ في التوليد", "error");
     } finally {
       setGenerating(false);
     }
   };
 
-  // حساب الإحصائيات
-  const stats = {
-    total: Object.keys(codes).length,
-    unused: Object.values(codes).filter(c => c.status === 'unused').length,
-    active: Object.values(codes).filter(c => c.status === 'active').length,
-    expired: Object.values(codes).filter(c => c.status === 'expired').length
+  /* ══ نسخ الأكواد ══ */
+  const copyAll = () => {
+    navigator.clipboard.writeText(recent.map((c) => c.code).join("\n"));
+    notify("📋 تم نسخ الأكواد", "gold");
   };
 
-  // تصدير الأكواد لـ CSV
-  const exportToCSV = () => {
-    const csvContent = [
-      ['الكود', 'المدة', 'السعر', 'الحالة', 'تاريخ الإنشاء', 'تاريخ التفعيل'].join(','),
-      ...Object.values(codes).map(code => [
-        code.code,
-        `${code.duration} أيام`,
-        `${code.price} ريال`,
-        code.status === 'unused' ? 'غير مستخدم' : code.status === 'active' ? 'مُفعّل' : 'منتهي',
-        new Date(code.createdAt).toLocaleDateString('ar-SA'),
-        code.activatedAt ? new Date(code.activatedAt).toLocaleDateString('ar-SA') : '-'
-      ].join(','))
-    ].join('\n');
-
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `codes_${Date.now()}.csv`;
-    link.click();
+  /* ══ تصدير CSV ══ */
+  const exportCSV = () => {
+    const rows = [
+      ["الكود", "المدة", "السعر", "الحالة", "تاريخ الإنشاء"].join(","),
+      ...vals.map((c) => [
+        c.code, `${c.duration} أيام`, `${c.price} ريال`,
+        { unused: "جديد", active: "مفعّل", expired: "منتهي" }[c.status] || c.status,
+        new Date(c.createdAt).toLocaleDateString("ar-SA"),
+      ].join(",")),
+    ].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\ufeff" + rows], { type: "text/csv;charset=utf-8;" }));
+    a.download = `codes_${Date.now()}.csv`;
+    a.click();
   };
 
-  // نسخ الأكواد المولدة
-  const copyGeneratedCodes = () => {
-    const text = generatedCodes.map(c => c.code).join('\n');
-    navigator.clipboard.writeText(text);
-    alert('تم نسخ الأكواد!');
-  };
-
-  if (loading) {
-    return (
-      <div style={{ textAlign: 'center', padding: '40px' }}>
-        <div style={{ fontSize: '40px', marginBottom: '16px' }}>⏳</div>
-        <div>جاري التحميل...</div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div style={{ textAlign: "center", padding: 40 }}>
+      <div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div>
+      <div>جاري التحميل...</div>
+    </div>
+  );
 
   return (
     <div className="scr">
-      {/* Header */}
       <div className="ptitle">👑 إدارة الأكواد</div>
       <div className="psub">توليد وإدارة أكواد الاشتراكات</div>
 
-      {/* Success Message */}
-      {showSuccess && (
-        <div style={{
-          background: 'linear-gradient(135deg, var(--green), #1a8a50)',
-          color: '#fff',
-          padding: '16px',
-          borderRadius: '12px',
-          marginBottom: '16px',
-          animation: 'fi 0.3s ease'
-        }}>
-          <div style={{ fontSize: '24px', marginBottom: '8px' }}>✅</div>
-          <div style={{ fontWeight: 700, marginBottom: '4px' }}>
-            تم توليد {generatedCodes.length} كود بنجاح!
-          </div>
-          <button 
-            className="btn bg bsm" 
-            style={{ marginTop: '8px' }}
-            onClick={copyGeneratedCodes}
-          >
-            📋 نسخ الأكواد
-          </button>
-        </div>
-      )}
-
-      {/* إحصائيات سريعة */}
+      {/* إحصائيات */}
       <div className="card">
         <div className="ctitle">📊 إحصائيات سريعة</div>
         <div className="sg sg4">
-          <div className="sbox">
-            <div className="snum">{stats.total}</div>
-            <div className="slbl">إجمالي الأكواد</div>
-          </div>
-          <div className="sbox">
-            <div className="snum" style={{ color: 'var(--blue)' }}>{stats.unused}</div>
-            <div className="slbl">غير مستخدم</div>
-          </div>
-          <div className="sbox">
-            <div className="snum" style={{ color: 'var(--green)' }}>{stats.active}</div>
-            <div className="slbl">مُفعّل</div>
-          </div>
-          <div className="sbox">
-            <div className="snum" style={{ color: 'var(--muted)' }}>{stats.expired}</div>
-            <div className="slbl">منتهي</div>
-          </div>
+          {[
+            { num: stats.total,   lbl: "الإجمالي",     clr: "var(--text)"  },
+            { num: stats.unused,  lbl: "غير مستخدم",   clr: "var(--blue)"  },
+            { num: stats.active,  lbl: "مُفعّل",        clr: "var(--green)" },
+            { num: stats.expired, lbl: "منتهي",         clr: "var(--muted)" },
+          ].map((s) => (
+            <div key={s.lbl} className="sbox">
+              <div className="snum" style={{ color: s.clr }}>{s.num}</div>
+              <div className="slbl">{s.lbl}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* توليد أكواد جديدة */}
+      {/* توليد */}
       <div className="card">
         <div className="ctitle">🎫 توليد أكواد جديدة</div>
-        
-        {/* اختيار الباقة */}
-        <div className="blbl">اختر نوع الباقة:</div>
-        <div className="bgrid" style={{ marginBottom: '16px' }}>
-          {packages.map(pkg => (
+
+        <div className="blbl">الباقة:</div>
+        <div className="bgrid" style={{ marginBottom: 14 }}>
+          {PACKAGES.map((p) => (
             <div
-              key={pkg.duration}
-              className={`nt ${selectedDuration === pkg.duration ? 'nsel' : ''}`}
-              onClick={() => setSelectedDuration(pkg.duration)}
-              style={{ cursor: 'pointer' }}
+              key={p.duration}
+              className={`nt ${pkg === p.duration ? "nsel" : ""}`}
+              onClick={() => setPkg(p.duration)}
             >
-              <div style={{ fontSize: '20px', marginBottom: '4px' }}>
-                {pkg.duration === 1 ? '🌟' : pkg.duration === 3 ? '⭐' : '💎'}
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: 700 }}>{pkg.label}</div>
-              <div style={{ fontSize: '12px', color: 'var(--gold)', marginTop: '4px' }}>
-                {pkg.price} ريال
-              </div>
-              {pkg.discount > 0 && (
-                <div style={{ fontSize: '10px', color: 'var(--green)', marginTop: '2px' }}>
-                  وفّر {pkg.discount}%
-                </div>
-              )}
+              <div style={{ fontSize: 18 }}>{p.duration === 1 ? "🌟" : p.duration === 3 ? "⭐" : "💎"}</div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{p.label}</div>
+              <div style={{ fontSize: 11, color: "var(--gold)" }}>{p.price} ريال</div>
             </div>
           ))}
         </div>
 
-        {/* عدد الأكواد */}
         <div className="ig">
-          <label className="lbl">عدد الأكواد المطلوبة:</label>
+          <label className="lbl">عدد الأكواد:</label>
           <input
-            type="number"
-            className="inp"
-            value={codeCount}
-            onChange={(e) => setCodeCount(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
-            min="1"
-            max="100"
-            placeholder="1-100"
+            type="number" className="inp"
+            value={count} min={1} max={100}
+            onChange={(e) => setCount(Math.min(100, Math.max(1, +e.target.value || 1)))}
           />
         </div>
 
-        {/* زر التوليد */}
-        <button
-          className="btn bg"
-          onClick={handleGenerateCodes}
-          disabled={generating}
-        >
-          {generating ? '⏳ جاري التوليد...' : '🎫 توليد الأكواد'}
+        <button className="btn bg" onClick={handleGenerate} disabled={generating}>
+          {generating ? "⏳ جاري التوليد..." : "🎫 توليد"}
         </button>
       </div>
 
-      {/* الأكواد المولدة حديثاً */}
-      {generatedCodes.length > 0 && (
+      {/* الأكواد المولّدة حديثاً */}
+      {recent.length > 0 && (
         <div className="card">
-          <div className="ctitle">✨ الأكواد المولدة حديثاً ({generatedCodes.length})</div>
-          <div style={{ 
-            maxHeight: '200px', 
-            overflowY: 'auto',
-            background: 'var(--card2)',
-            borderRadius: '8px',
-            padding: '8px'
-          }}>
-            {generatedCodes.map((code, idx) => (
-              <div key={idx} style={{
-                padding: '8px 12px',
-                background: '#09091e',
-                borderRadius: '6px',
-                marginBottom: '4px',
-                fontFamily: 'Cairo, sans-serif',
-                fontSize: '14px',
-                fontWeight: 700,
-                color: 'var(--gold)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div className="ctitle">✨ مولّدة حديثاً ({recent.length})</div>
+            <button className="btn bv bsm" onClick={copyAll}>📋 نسخ</button>
+          </div>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            {recent.map((c, i) => (
+              <div key={i} style={{
+                padding: "8px 12px", background: "#09091e", borderRadius: 6,
+                marginBottom: 4, display: "flex", justifyContent: "space-between",
+                fontFamily: "'Cairo',sans-serif", fontWeight: 700, color: "var(--gold)", fontSize: 14,
               }}>
-                <span>{code.code}</span>
-                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                  {code.duration} يوم - {code.price} ريال
-                </span>
+                <span>{c.code}</span>
+                <span style={{ fontSize: 10, color: "var(--muted)" }}>{c.duration} يوم</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* قائمة جميع الأكواد */}
+      {/* كل الأكواد */}
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <div className="ctitle">📋 جميع الأكواد ({stats.total})</div>
-          <button className="btn bgh bsm" onClick={exportToCSV}>
-            📥 تصدير CSV
-          </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div className="ctitle">📋 كل الأكواد ({stats.total})</div>
+          <button className="btn bgh bsm" onClick={exportCSV}>📥 CSV</button>
         </div>
-
-        <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-          {Object.entries(codes)
-            .sort(([, a], [, b]) => b.createdAt - a.createdAt)
-            .map(([id, code]) => (
-              <CodeItem key={id} code={code} />
-            ))}
+        <div style={{ maxHeight: 400, overflowY: "auto" }}>
+          {Object.values(codes)
+            .sort((a, b) => b.createdAt - a.createdAt)
+            .map((c, i) => <CodeRow key={i} code={c} />)}
         </div>
       </div>
     </div>
   );
 }
 
-/* ══════════════════════════════════════════════════
-   CODE ITEM COMPONENT
-══════════════════════════════════════════════════ */
-function CodeItem({ code }) {
-  const statusColors = {
-    unused: { bg: 'rgba(79, 163, 224, 0.1)', border: 'var(--blue)', text: 'var(--blue)', label: '🆕 جديد' },
-    active: { bg: 'rgba(46, 204, 113, 0.1)', border: 'var(--green)', text: 'var(--green)', label: '✅ مُفعّل' },
-    expired: { bg: 'rgba(122, 116, 160, 0.1)', border: 'var(--muted)', text: 'var(--muted)', label: '⏰ منتهي' }
+/* ── صف الكود ── */
+function CodeRow({ code }) {
+  const map = {
+    unused:  { bg: "rgba(79,163,224,.08)",  border: "var(--blue)",  lbl: "🆕 جديد"   },
+    active:  { bg: "rgba(46,204,113,.08)",  border: "var(--green)", lbl: "✅ مُفعّل"  },
+    expired: { bg: "rgba(122,116,160,.08)", border: "var(--muted)", lbl: "⏰ منتهي"  },
   };
-
-  const status = statusColors[code.status] || statusColors.unused;
+  const s = map[code.status] || map.unused;
 
   return (
     <div style={{
-      background: status.bg,
-      border: `1px solid ${status.border}`,
-      borderRadius: '10px',
-      padding: '12px',
-      marginBottom: '8px'
+      background: s.bg, border: `1px solid ${s.border}`,
+      borderRadius: 10, padding: "10px 12px", marginBottom: 7,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <div style={{
-          fontFamily: 'Cairo, sans-serif',
-          fontSize: '15px',
-          fontWeight: 900,
-          color: 'var(--gold)',
-          letterSpacing: '1px'
-        }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+        <span style={{ fontFamily: "'Cairo',sans-serif", fontWeight: 900, color: "var(--gold)", fontSize: 14, letterSpacing: 1 }}>
           {code.code}
-        </div>
-        <div style={{
-          fontSize: '11px',
-          fontWeight: 700,
-          color: status.text,
-          background: status.bg,
-          padding: '4px 10px',
-          borderRadius: '6px',
-          border: `1px solid ${status.border}`
-        }}>
-          {status.label}
-        </div>
+        </span>
+        <span style={{ fontSize: 10, color: s.border, fontWeight: 700 }}>{s.lbl}</span>
       </div>
-
-      <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: 'var(--muted)' }}>
-        <div>
-          ⏰ <strong>{code.duration}</strong> {code.duration === 1 ? 'يوم' : 'أيام'}
-        </div>
-        <div>
-          💰 <strong>{code.price}</strong> ريال
-        </div>
-        <div>
-          📅 <strong>{new Date(code.createdAt).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' })}</strong>
-        </div>
+      <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--muted)" }}>
+        <span>⏰ {code.duration} {code.duration === 1 ? "يوم" : "أيام"}</span>
+        <span>💰 {code.price} ريال</span>
+        <span>📅 {new Date(code.createdAt).toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</span>
       </div>
-
-      {code.activatedAt && (
-        <div style={{ 
-          fontSize: '10px', 
-          color: 'var(--green)', 
-          marginTop: '6px',
-          paddingTop: '6px',
-          borderTop: '1px solid rgba(255,255,255,0.05)'
-        }}>
-          ✅ فُعّل في: {new Date(code.activatedAt).toLocaleString('ar-SA')}
-          {code.expiresAt && (
-            <> | ينتهي: {new Date(code.expiresAt).toLocaleDateString('ar-SA')}</>
-          )}
-        </div>
-      )}
     </div>
   );
 }
