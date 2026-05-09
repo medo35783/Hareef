@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { initializeApp } from "firebase/app";
+// ⚠️ ملف مؤقت — يحتوي كل منطق اللعبة من النسخة القديمة
+// سيتم تقسيمه لاحقاً على ملفات منفصلة
+
 import { getDatabase, ref, set, get, update, onValue, off, push } from "firebase/database";
 
 /* ⭐ نظام الأكواد والاشتراكات - v40 */
